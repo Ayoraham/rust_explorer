@@ -3,6 +3,7 @@ use chrono::{DateTime, Local};
 use homedir::my_home;
 use std::{
     env,
+    fmt::Display,
     fs::{self, Metadata},
     path::{Path, PathBuf},
 };
@@ -14,40 +15,66 @@ pub struct Env {
     pub files: Vec<String>,
 }
 
-fn get_dirs(current_dir: &PathBuf) -> (Vec<String>, Vec<String>) {
+fn process_directory(current_dir: &Path) -> Result<(Vec<String>, Vec<String>), std::io::Error> {
     let mut files = Vec::new();
     let mut folders = Vec::new();
-    let dir_contents = std::fs::read_dir(current_dir).expect("Unable to iterate through dirctory");
+    let dir_contents = std::fs::read_dir(current_dir)?;
     for dir in dir_contents {
-        let dir = dir.expect("Could not get file path");
-        let filename = dir.file_name().into_string().unwrap();
-        if dir.file_type().unwrap().is_file() {
+        let dir = match dir{
+            Ok(val) => val,
+            Err(_) => continue
+        };
+        let filename = dir.file_name().to_string_lossy().into_owned();
+        if dir.file_type()?.is_file() {
             files.push(filename);
         } else {
             folders.push(filename);
         }
     }
-    (folders, files)
+    Ok((folders, files))
 }
 
 impl Env {
     pub fn new() -> Self {
         println!("Welcome to rust Explorer\nEnter --help for more info");
-        let start_path = match my_home().unwrap() {
-            Some(t) => t,
+        let mut start_args = env::args().skip(1).take(1);
+        let start_path = match start_args.next() {
+            Some(val) => PathBuf::from(val),
             None => {
-                println!("Could not locate System Root Dir, Starting from current directory");
-                env::current_dir().unwrap()
+                let start_path = match my_home().unwrap() {
+                    Some(t) => t,
+                    None => {
+                        println!(
+                            "Could not locate System Root Dir, Starting from current directory"
+                        );
+                        env::current_dir().unwrap()
+                    }
+                };
+                start_path
             }
         };
+
         env::set_current_dir(&start_path)
             .expect("Could not navigate to root directory, Crahsing... :)");
+        let (folders, files) = process_directory(&start_path).unwrap();
         Self {
             meta_data: fs::metadata(&start_path).unwrap(),
-            folders: get_dirs(&start_path).0,
-            files: get_dirs(&start_path).1,
+            folders,
+            files,
             current_location: start_path,
         }
+    }
+
+    fn update(&mut self, new_pth: PathBuf) -> Result<(), std::io::Error>{
+        let new_meta_data = new_pth.metadata()?;
+        let (new_folders, new_files) = process_directory(&new_pth)?;
+        self.meta_data = new_meta_data;
+        self.files = new_files;
+        self.folders = new_folders;
+        self.current_location = new_pth.clone();
+        env::set_current_dir(&new_pth)?;
+        Ok(())
+
     }
 
     pub fn view_dir_content_flagged(&self, flag: &str) {
@@ -74,9 +101,20 @@ impl Env {
         utils::print_current_dir(&self.current_location);
     }
 
-    pub fn move_to_dir(path: &Path) {
-        std::env::set_current_dir(path).unwrap();
-        utils::print_current_dir(path);
+    pub fn navigate(&mut self, flag: &str) {
+        match flag{
+            ".." => {
+                let mut new_pth = self.current_location.clone();
+                let removed = new_pth.pop();
+                if removed{
+                    match self.update(new_pth){
+                        Ok(_) => (),
+                        Err(msg) => eprintln!("There was an error: {msg}")
+                    };
+                }
+            },
+            _ => (),
+        }
     }
 
     pub fn dir_overview(&self) {
@@ -98,37 +136,76 @@ impl Env {
             "Name of folder: {}",
             self.current_location.file_name().unwrap().display()
         );
+        println!("{}", get_size(&self.current_location));
+    }
 
-        println!("Size of folder: {:.2}Mb", self.get_dir_size() / 1024.0 / 1024.0);
+    pub fn goto() {
+
     }
 }
 
-impl Env {
-    fn get_dir_size(&self) -> f64 {
-        let mut total_size: f64 = 0.0;
-        for file in &self.files {
-            let file_loc = self.current_location.join(file);
-            total_size += file_loc
-                .metadata()
-                .expect("Could not get file metadate")
-                .len() as f64;
-        }
-        total_size
-    }
-    
+#[derive(Debug)]
+struct Size {
+    bytes: u64,
+    skipped_entries: u64,
+    skipped_folders: u64,
 }
 
-fn get_size(path:&Path) -> u64{
-    let mut size = 0;
-    for file in path.read_dir().unwrap().flatten(){
-        if file.metadata().unwrap().is_dir(){
-            size += get_size(&file.path());
-        }else{
-            size += file.metadata().unwrap().len();
+impl Size {
+    fn new() -> Self {
+        Self {
+            bytes: 0,
+            skipped_entries: 0,
+            skipped_folders: 0,
         }
-
     }
+}
+
+impl Display for Size {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Size of folder {}\nSkipped Folders {}\nSkipped Entries {}",
+            utils::format_size(self.bytes),
+            self.skipped_folders,
+            self.skipped_entries
+        )
+    }
+}
+
+fn get_size(path: &Path) -> Size {
+    let mut size = Size::new();
+    let entries = match path.read_dir() {
+        Ok(val) => val,
+        Err(_) => {
+            size.skipped_folders += 1;
+            return size;
+        }
+    };
+    for entry in entries {
+        let direntry = match entry {
+            Ok(val) => val,
+            Err(_) => {
+                size.skipped_entries += 1;
+                continue;
+            }
+        };
+        let metadata = match direntry.metadata() {
+            Ok(val) => val,
+            Err(_) => {
+                size.skipped_entries += 1;
+                continue;
+            }
+        };
+        if metadata.is_dir() {
+            let sub = get_size(&direntry.path());
+            size.bytes += sub.bytes;
+            size.skipped_entries += sub.skipped_entries;
+            size.skipped_folders += sub.skipped_folders;
+        } else {
+            size.bytes += metadata.len()
+        }
+    }
+
     size
-    }
-
- 
+}

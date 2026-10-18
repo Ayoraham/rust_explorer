@@ -22,3 +22,22 @@ pub fn print_current_dir(current_dir: impl AsRef<Path>) {
     );
     println!("{}", text.green())
 }
+
+pub fn format_size(bytes: u64) -> String {
+    let bytes = bytes as f64;
+    const STEP: f64 = 1024.0;
+    const KB: f64 = STEP;
+    const MB: f64 = KB * STEP;
+    const GB: f64 = MB * STEP;
+    const RND: f64 = 1.0;
+
+    if bytes / GB >= RND {
+        format!("{:.2} GB", bytes / GB)
+    } else if bytes / MB >= RND {
+        format!("{:.2} MB", bytes / MB)
+    } else if bytes / KB >= RND {
+        format!("{:.2} KB", bytes / KB)
+    } else {
+        format!("{} Bytes", bytes as u64)
+    }
+}

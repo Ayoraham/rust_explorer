@@ -1,9 +1,9 @@
 use rust_explorer::{env, system, utils};
-use walkdir::WalkDir;
 use std::{
     fs::{self, Metadata},
     path::{Path, PathBuf},
 };
+use walkdir::WalkDir;
 
 //move_to_dir
 //.move
@@ -11,8 +11,9 @@ use std::{
 // add a cd cmd to move to a nearby loc
 
 fn main() {
+    let mut user_env = env::Env::new();
+
     loop {
-        let user_env = env::Env::new();
         utils::print_current_dir(&user_env.current_location);
         let user_input: Vec<String> = utils::get_user_input();
         let parsed_input: Vec<&str> = user_input.iter().map(|word| word.as_str()).collect();
@@ -23,7 +24,8 @@ fn main() {
             ["listdir"] => user_env.view_dir_content(),
             ["listdir", flag] => user_env.view_dir_content_flagged(flag),
             ["dir_overview"] => user_env.dir_overview(),
-            ["size"] => println!("{}", get_size(Path::new("C:/Users/Hp/Desktop/rustworks/rust_explorer"))),
+            ["cd", flag] => user_env.navigate(*flag),
+            //["size"] =>
 
             //["listdir", flag] => match flag {
             // "folder"   => ,
@@ -36,16 +38,3 @@ fn main() {
         println!("{:?}", user_input);
     }
 }
-
-fn get_size(path:&Path) -> u64{
-    let mut size = 0;
-    for file in path.read_dir().unwrap().flatten(){
-        if file.metadata().unwrap().is_dir(){
-            size += get_size(&file.path());
-        }else{
-            size += file.metadata().unwrap().len();
-        }
-
-    }
-    size
-    }
