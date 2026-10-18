@@ -20,9 +20,9 @@ fn process_directory(current_dir: &Path) -> Result<(Vec<String>, Vec<String>), s
     let mut folders = Vec::new();
     let dir_contents = std::fs::read_dir(current_dir)?;
     for dir in dir_contents {
-        let dir = match dir{
+        let dir = match dir {
             Ok(val) => val,
-            Err(_) => continue
+            Err(_) => continue,
         };
         let filename = dir.file_name().to_string_lossy().into_owned();
         if dir.file_type()?.is_file() {
@@ -65,16 +65,15 @@ impl Env {
         }
     }
 
-    fn update(&mut self, new_pth: PathBuf) -> Result<(), std::io::Error>{
+    fn update(&mut self, new_pth: PathBuf) -> Result<(), std::io::Error> {
         let new_meta_data = new_pth.metadata()?;
         let (new_folders, new_files) = process_directory(&new_pth)?;
+        env::set_current_dir(&new_pth)?;
         self.meta_data = new_meta_data;
         self.files = new_files;
         self.folders = new_folders;
-        self.current_location = new_pth.clone();
-        env::set_current_dir(&new_pth)?;
+        self.current_location = new_pth;
         Ok(())
-
     }
 
     pub fn view_dir_content_flagged(&self, flag: &str) {
@@ -102,18 +101,35 @@ impl Env {
     }
 
     pub fn navigate(&mut self, flag: &str) {
-        match flag{
+        let new_pth = match flag {
             ".." => {
                 let mut new_pth = self.current_location.clone();
                 let removed = new_pth.pop();
-                if removed{
-                    match self.update(new_pth){
-                        Ok(_) => (),
-                        Err(msg) => eprintln!("There was an error: {msg}")
-                    };
+                if removed {
+                    Some(new_pth)
+                } else {
+                    eprintln!("Cannot go back");
+                    None
                 }
-            },
-            _ => (),
+            }
+            dir => {
+                let mut new_pth = self.current_location.clone();
+                new_pth.push(dir);
+                Some(new_pth)
+            }
+        };
+        if let Some(pth) = new_pth{
+            match self.update(pth){
+                Ok(()) => (),
+                Err(msg) => eprintln!("There was an error: {msg}")
+            }
+        }
+    }
+    pub fn goto(&mut self, abs_pth: &str) {
+        let abs_pth = PathBuf::from(abs_pth);
+        match self.update(abs_pth){
+            Ok(()) => (),
+            Err(msg) => eprintln!("There was an error: {msg}")
         }
     }
 
@@ -139,9 +155,6 @@ impl Env {
         println!("{}", get_size(&self.current_location));
     }
 
-    pub fn goto() {
-
-    }
 }
 
 #[derive(Debug)]

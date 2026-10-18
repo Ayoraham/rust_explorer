@@ -25,6 +25,7 @@ fn main() {
             ["listdir", flag] => user_env.view_dir_content_flagged(flag),
             ["dir_overview"] => user_env.dir_overview(),
             ["cd", flag] => user_env.navigate(*flag),
+            ["goto", flag] => user_env.goto(*flag),
             //["size"] =>
 
             //["listdir", flag] => match flag {
